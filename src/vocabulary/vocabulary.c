@@ -100,7 +100,7 @@ int vocabulary_add_word(Vocabulary *v, const char *word)
     return new_entry->id;
 }
 
-int vocabulary_lookup_id(const Vocabulary *v, const char *word)
+int vocabulary_get_index(const Vocabulary *v, const char *word)
 {
     if (!v || !word)
         return -1;
@@ -155,7 +155,7 @@ void vocabulary_print(const Vocabulary *v)
 // Function to create a one-hot encoded vector for a given word
 Matrix *create_one_hot_vector(Vocabulary *v, char *word)
 {
-    int index = vocabulary_lookup_id(v, word);
+    int index = vocabulary_get_index(v, word);
     if (index == -1)
     {
         fprintf(stderr, "Word '%s' not found in vocabulary\n", word);
