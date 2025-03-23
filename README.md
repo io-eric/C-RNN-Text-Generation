@@ -21,8 +21,8 @@ This project implements a basic RNN model in C to generate text. The model is tr
 ## Installation
 1. Clone the repository:
    ```
-   git clone https://github.com/io-eric/C-RNN-Language-Model.git
-   cd C-RNN-Language-Model
+   git clone https://github.com/io-eric/C-RNN-Text-Generation.git
+   cd C-RNN-Text-Generation
    ```
 2. Compile and run the project:
     ```
