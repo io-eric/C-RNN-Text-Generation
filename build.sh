@@ -10,7 +10,7 @@ SOURCES="src/main.c src/matrix/matrix.c src/vocabulary/vocabulary.c src/model/rn
 CFLAGS="-Wall -g"
 
 # Compile the source files into an executable
-gcc $CFLAGS $SOURCES -o $OUTPUT
+gcc $CFLAGS $SOURCES -o $OUTPUT -lm
 
 # Check if the compilation was successful
 if [ $? -eq 0 ]; then
