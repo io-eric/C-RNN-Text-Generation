@@ -36,7 +36,7 @@ int main()
     int input_size = v->size;
     int hidden_size = 100;
     int output_size = v->size;
-    double learning_rate = 0.0001;
+    double learning_rate = 0.01;
 
     RNN *rnn = rnn_init(input_size, hidden_size, output_size, learning_rate);
 
@@ -64,7 +64,7 @@ int main()
     }
 
     // Train the RNN
-    int epochs = 5000;
+    int epochs = 2000;
     for (int epoch = 0; epoch < epochs; epoch++)
     {
         double epoch_loss = 0.0;
@@ -87,11 +87,11 @@ int main()
     }
 
     // Generate text after training
-    char *input_text = "Matrix";
+    char *input_text = "Rain";
     char *next_word_predictions = rnn_generate_text(v, rnn, input_text, 5);
     printf("Input text: %s\n", input_text);
     printf("Next word predictions: %s\n", next_word_predictions);
-
+    
     // Clean up
     free(next_word_predictions);
     for (int i = 0; i < num_samples; i++)
