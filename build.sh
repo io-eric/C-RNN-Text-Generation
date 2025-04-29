@@ -9,6 +9,9 @@ SOURCES="src/main.c src/matrix/matrix.c src/vocabulary/vocabulary.c src/model/rn
 # Define any compiler flags if needed (e.g., for debugging)
 CFLAGS="-Wall -g"
 
+# Make sure the dist directory exists
+mkdir -p dist
+
 # Compile the source files into an executable
 gcc $CFLAGS $SOURCES -o $OUTPUT -lm
 
