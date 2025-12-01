@@ -36,8 +36,8 @@ After compiling and running the program, the model will:
 
 To modify the input word or the number of generated words, edit the following lines in main.c:
 ````c
-char *input_text = "Matrix"; // Change the input word
-char *next_word_predictions = rnn_generate_text(v, rnn, input_text, 5); // Change the number of words to generate
+const char *input_text = "Matrix"; // Change the input word
+char *next_word_predictions = rnn_generate_text(v, rnn, (char *)input_text, 5); // Change the number of words to generate
 ````
 
 ## Training Data
@@ -56,17 +56,14 @@ const char *training_data[] = {
 You can replace this dataset with your own text data for custom training.
 
 ## Results
-After training, the model generates text based on the input word. For example:
+After training, the model generates text based on the input word. For example (actual numbers and predictions will vary between runs):
 ```c
 $ ./build.sh
 Compilation successful!
-Epoch 0, Average Loss: 1.657553
-Epoch 1000, Average Loss: 0.044296
-Epoch 2000, Average Loss: 0.012500
-Epoch 3000, Average Loss: 0.012825
-Epoch 4000, Average Loss: 0.008907
+Epoch 0, Average Loss: 0.034648
+Epoch 1000, Average Loss: 0.000403
 Input text: Matrix
-Next word predictions: dimensions dimensions never never full
+Next word predictions: dimensions don’t match? Shocking. don’t
 ```
 
 The model's performance is limited by the small dataset and simple architecture, but it demonstrates the basic principles of RNNs and text generation.

@@ -1,13 +1,41 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
 #include "model/rnn.h"
 #include "vocabulary/vocabulary.h"
 
-int main()
+// Simple tokenizer that splits on spaces only
+static int count_tokens(const char *sentence)
+{
+    char *copy = strdup(sentence);
+    if (!copy)
+    {
+        fprintf(stderr, "count_tokens: strdup failed\n");
+        exit(EXIT_FAILURE);
+    }
+
+    int count = 0;
+    char *tok = strtok(copy, " ");
+    while (tok)
+    {
+        count++;
+        tok = strtok(NULL, " ");
+    }
+
+    free(copy);
+    return count;
+}
+
+int main(void)
 {
     // Initialize vocabulary
     Vocabulary *v = vocabulary_create(100);
+    if (!v)
+    {
+        fprintf(stderr, "Failed to create vocabulary\n");
+        return EXIT_FAILURE;
+    }
 
     const char *training_data[] = {
         "Matrix dimensions don’t match? Shocking.",
@@ -17,92 +45,197 @@ int main()
         "Books? Oh yeah, they’re just full of ideas or whatever.",
         "Time’s too short for pointless stuff... unless it’s procrastination."};
 
-    int num_samples = sizeof(training_data) / sizeof(training_data[0]);
+    int num_sentences = (int)(sizeof(training_data) / sizeof(training_data[0]));
 
-    // Add words to the vocabulary
-    for (int i = 0; i < num_samples; i++)
+    // ----------------------------------------------------------------------
+    // 1. Build vocabulary from all tokens in all sentences
+    // ----------------------------------------------------------------------
+    for (int i = 0; i < num_sentences; i++)
     {
         char *sentence = strdup(training_data[i]);
+        if (!sentence)
+        {
+            fprintf(stderr, "strdup failed while building vocabulary\n");
+            vocabulary_free(v);
+            return EXIT_FAILURE;
+        }
+
         char *word = strtok(sentence, " ");
         while (word != NULL)
         {
             vocabulary_add_word(v, word);
             word = strtok(NULL, " ");
         }
+
         free(sentence);
     }
 
-    // Parameters
+    // ----------------------------------------------------------------------
+    // 2. Build all adjacent word pairs across the dataset
+    //    For sentence: w0 w1 w2 w3
+    //    We create pairs: (w0->w1), (w1->w2), (w2->w3)
+    // ----------------------------------------------------------------------
+
+    // First pass: count total pairs
+    int total_pairs = 0;
+    for (int i = 0; i < num_sentences; i++)
+    {
+        int tokens = count_tokens(training_data[i]);
+        if (tokens > 1)
+        {
+            total_pairs += (tokens - 1);
+        }
+    }
+
+    if (total_pairs == 0)
+    {
+        fprintf(stderr, "No training pairs found\n");
+        vocabulary_free(v);
+        return EXIT_FAILURE;
+    }
+
+    Matrix **input_vectors = (Matrix **)malloc((size_t)total_pairs * sizeof(Matrix *));
+    Matrix **target_vectors = (Matrix **)malloc((size_t)total_pairs * sizeof(Matrix *));
+    if (!input_vectors || !target_vectors)
+    {
+        fprintf(stderr, "Memory allocation failed for training pairs\n");
+        free(input_vectors);
+        free(target_vectors);
+        vocabulary_free(v);
+        return EXIT_FAILURE;
+    }
+
+    // Second pass: fill in all pairs as one-hot vectors
+    int pair_index = 0;
+    for (int i = 0; i < num_sentences; i++)
+    {
+        char *sentence = strdup(training_data[i]);
+        if (!sentence)
+        {
+            fprintf(stderr, "strdup failed while creating training pairs\n");
+            // Cleanup partial allocations
+            for (int k = 0; k < pair_index; k++)
+            {
+                matrix_free(input_vectors[k]);
+                matrix_free(target_vectors[k]);
+            }
+            free(input_vectors);
+            free(target_vectors);
+            vocabulary_free(v);
+            return EXIT_FAILURE;
+        }
+
+        char *prev = strtok(sentence, " ");
+        char *curr = strtok(NULL, " ");
+
+        while (curr != NULL)
+        {
+            input_vectors[pair_index] = create_one_hot_vector(v, prev);
+            target_vectors[pair_index] = create_one_hot_vector(v, curr);
+            pair_index++;
+
+            prev = curr;
+            curr = strtok(NULL, " ");
+        }
+
+        free(sentence);
+    }
+
+    if (pair_index != total_pairs)
+    {
+        fprintf(stderr, "Logic error: pair_index (%d) != total_pairs (%d)\n", pair_index, total_pairs);
+        // Cleanup and exit
+        for (int k = 0; k < pair_index; k++)
+        {
+            matrix_free(input_vectors[k]);
+            matrix_free(target_vectors[k]);
+        }
+        free(input_vectors);
+        free(target_vectors);
+        vocabulary_free(v);
+        return EXIT_FAILURE;
+    }
+
+    // ----------------------------------------------------------------------
+    // 3. Initialize RNN
+    // ----------------------------------------------------------------------
     int input_size = v->size;
     int hidden_size = 100;
     int output_size = v->size;
     double learning_rate = 0.01;
 
     RNN *rnn = rnn_init(input_size, hidden_size, output_size, learning_rate);
-
-    // Prepare training data: input-target pairs
-    Matrix **input_vectors = (Matrix **)malloc(num_samples * sizeof(Matrix *));
-    Matrix **target_vectors = (Matrix **)malloc(num_samples * sizeof(Matrix *));
-
-    if (input_vectors == NULL || target_vectors == NULL)
+    if (!rnn)
     {
-        fprintf(stderr, "Memory allocation failed\n");
-        return 1;
+        fprintf(stderr, "Failed to initialize RNN\n");
+        for (int k = 0; k < total_pairs; k++)
+        {
+            matrix_free(input_vectors[k]);
+            matrix_free(target_vectors[k]);
+        }
+        free(input_vectors);
+        free(target_vectors);
+        vocabulary_free(v);
+        return EXIT_FAILURE;
     }
 
-    // Convert sentences to sequences of one-hot encoded vectors
-    for (int i = 0; i < num_samples; i++)
-    {
-        char *sentence = strdup(training_data[i]);
-        char *word = strtok(sentence, " ");
-        input_vectors[i] = create_one_hot_vector(v, word);
-
-        word = strtok(NULL, " ");
-        target_vectors[i] = create_one_hot_vector(v, word);
-
-        free(sentence);
-    }
-
-    // Train the RNN
+    // ----------------------------------------------------------------------
+    // 4. Training loop
+    //    Uses the new rnn_backward signature: (rnn, input, target, output)
+    //    We reset the hidden state for each pair to keep behavior simple.
+    // ----------------------------------------------------------------------
     int epochs = 2000;
+
     for (int epoch = 0; epoch < epochs; epoch++)
     {
         double epoch_loss = 0.0;
-        for (int i = 0; i < num_samples; i++)
-        {
-            Matrix *output = rnn_forward(rnn, input_vectors[i]);
-            rnn_backward(rnn, input_vectors[i], target_vectors[i]);
 
+        for (int i = 0; i < total_pairs; i++)
+        {
+            // Reset hidden state per sample for now (no BPTT)
+            matrix_free(rnn->hidden_state);
+            rnn->hidden_state = matrix_zero(rnn->hidden_size, 1);
+
+            Matrix *output = rnn_forward(rnn, input_vectors[i]);
             double loss = matrix_mean_square_error(output, target_vectors[i]);
             epoch_loss += loss;
+
+            // Backward using the already computed output
+            rnn_backward(rnn, input_vectors[i], target_vectors[i], output);
 
             matrix_free(output);
         }
 
-        double avg_epoch_loss = epoch_loss / num_samples;
-        if (epoch % 1000 == 0) // Print loss every 1000 epochs
+        double avg_epoch_loss = epoch_loss / (double)total_pairs;
+        if (epoch % 1000 == 0)
         {
             printf("Epoch %d, Average Loss: %f\n", epoch, avg_epoch_loss);
         }
     }
 
-    // Generate text after training
-    char *input_text = "Rain";
-    char *next_word_predictions = rnn_generate_text(v, rnn, input_text, 5);
+    // ----------------------------------------------------------------------
+    // 5. Generate some text
+    // ----------------------------------------------------------------------
+    const char *input_text = "Matrix";
+    char *next_word_predictions = rnn_generate_text(v, rnn, (char *)input_text, 5);
     printf("Input text: %s\n", input_text);
     printf("Next word predictions: %s\n", next_word_predictions);
-    
-    // Clean up
+
+    // ----------------------------------------------------------------------
+    // 6. Cleanup
+    // ----------------------------------------------------------------------
     free(next_word_predictions);
-    for (int i = 0; i < num_samples; i++)
+
+    for (int i = 0; i < total_pairs; i++)
     {
         matrix_free(input_vectors[i]);
         matrix_free(target_vectors[i]);
     }
     free(input_vectors);
     free(target_vectors);
+
     rnn_free(rnn);
     vocabulary_free(v);
 
-    return 0;
+    return EXIT_SUCCESS;
 }

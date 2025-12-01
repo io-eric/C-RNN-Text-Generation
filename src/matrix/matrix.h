@@ -40,3 +40,7 @@ Matrix *matrix_apply(double (*func)(double), Matrix *m);
 Matrix *matrix_scale(double n, Matrix *m);
 Matrix *matrix_addScalar(double n, Matrix *m);
 Matrix *matrix_transpose(Matrix *m);
+
+// Additional utilities for classification
+Matrix *matrix_softmax(Matrix *logits);
+double matrix_cross_entropy(Matrix *probs, Matrix *target);
