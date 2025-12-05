@@ -114,16 +114,26 @@ Matrix *rnn_forward(RNN *rnn, Matrix *input)
         exit(EXIT_FAILURE);
     }
 
-    // Compute output: output = W_o * hidden_state
-    Matrix *output = matrix_dot(rnn->output_weights, activated_hidden);
+    // Compute output logits: logits = W_o * hidden_state
+    Matrix *logits = matrix_dot(rnn->output_weights, activated_hidden);
     matrix_free(activated_hidden);
-    if (!output)
+    if (!logits)
     {
-        fprintf(stderr, "rnn_forward: output allocation failed\n");
+        fprintf(stderr, "rnn_forward: logits allocation failed\n");
         exit(EXIT_FAILURE);
     }
 
-    return output;
+    // Convert logits to probabilities with softmax for use with cross-entropy
+    Matrix *probs = matrix_softmax(logits);
+    matrix_free(logits);
+    if (!probs)
+    {
+        fprintf(stderr, "rnn_forward: softmax allocation failed\n");
+        exit(EXIT_FAILURE);
+    }
+
+    // NOTE: Caller now receives probabilities, not raw logits
+    return probs;
 }
 
 void rnn_backward(RNN *rnn, Matrix *input, Matrix *target, Matrix *output)
@@ -134,7 +144,9 @@ void rnn_backward(RNN *rnn, Matrix *input, Matrix *target, Matrix *output)
         exit(EXIT_FAILURE);
     }
 
-    // Compute the error in the output layer: output_error = output - target
+    // Compute the error in the output layer for softmax + cross-entropy:
+    // output is expected to be probabilities; with one-hot targets,
+    // dL/dlogits simplifies to (probs - target)
     Matrix *output_error = matrix_subtract(output, target);
     if (!output_error)
     {

@@ -197,7 +197,7 @@ int main(void)
             rnn->hidden_state = matrix_zero(rnn->hidden_size, 1);
 
             Matrix *output = rnn_forward(rnn, input_vectors[i]);
-            double loss = matrix_mean_square_error(output, target_vectors[i]);
+            double loss = matrix_cross_entropy(output, target_vectors[i]);
             epoch_loss += loss;
 
             // Backward using the already computed output
