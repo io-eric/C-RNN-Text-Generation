@@ -4,10 +4,11 @@ This repository contains a simple Recurrent Neural Network (RNN) implemented fro
 
 ## Overview
 This project implements a basic RNN model in C to generate text. The model is trained on a small dataset of sentences and learns to predict the next word in a sequence. The implementation includes:
+- Tokenizer that splits off punctuation.
 - Vocabulary creation and word indexing.
 - One-hot encoding for input and target vectors.
-- Forward and backward propagation for training.
-- Text generation based on a given input word.
+- RNN with recurrent weights and biases, trained with backpropagation through time.
+- Text generation with temperature sampling.
 
 ## Features
 - From Scratch Implementation: The RNN is implemented entirely in C without relying on external machine learning libraries.
@@ -34,10 +35,10 @@ After compiling and running the program, the model will:
 2. Generate text based on the input word "Matrix."
 3. Print the generated text to the console.
 
-To modify the input word, the number of generated words or how random the output is, edit the following lines in main.c:
+To change the input word, number of words or randomness, edit the following lines in main.c:
 ````c
 const char *input_text = "Matrix"; // Change the input word
-double temperature = 0.8; // 0 = always pick the most likely word, higher = more random
+double temperature = 0.8; // 0 = greedy, higher = more random
 char *next_word_predictions = rnn_generate_text(v, rnn, (char *)input_text, 10, temperature); // Change the number of words to generate
 ````
 
@@ -61,14 +62,14 @@ After training, the model generates text based on the input word. For example (a
 ```c
 $ ./build.sh
 Compilation successful!
-Epoch 0, Average Loss: 4.038023
-Epoch 1000, Average Loss: 0.207947
-Epoch 1999, Average Loss: 0.198872
+Epoch 0, Average Loss: 4.062909
+Epoch 1000, Average Loss: 0.157500
+Epoch 1999, Average Loss: 0.155514
 Input text: Matrix
 Next word predictions: dimensions don’t match? Shocking.
 ```
 
-The loss is cross-entropy, so it starts around ln(vocabulary size) and does not go to 0: the first word of a sentence (after `<bos>`) can't be predicted from the context. Generation stops when the model predicts `<eos>`, so it can return fewer words than requested.
+The loss won't reach 0 since the first word of a sentence can't be predicted. Generation stops at `<eos>`.
 
 The model's performance is limited by the small dataset and simple architecture, but it demonstrates the basic principles of RNNs and text generation.
 
@@ -80,7 +81,6 @@ The model's performance is limited by the small dataset and simple architecture,
 ## Future Improvements
 - Larger Dataset: Train the model on a larger and more diverse dataset.
 - Advanced Architectures: Implement more advanced RNN variants like LSTMs or GRUs.
-- Better Text Generation: Improve the text generation logic to produce more coherent and varied outputs.
 - User Interface: Add a command-line interface for easier interaction with the model.
 
 ## License
