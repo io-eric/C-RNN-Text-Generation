@@ -327,7 +327,35 @@ double rnn_train_sequence(RNN *rnn, Matrix **inputs, Matrix **targets, int lengt
     return loss;
 }
 
-char *rnn_generate_text(Vocabulary *v, RNN *rnn, char *initial_input, int length)
+// Pick the next word from the output probabilities.
+// temperature <= 0 always takes the most likely word. Otherwise each word is drawn
+// with probability p^(1/temperature): 1.0 uses the model's probabilities as they are,
+// lower values stay closer to the most likely word, higher values are more random.
+static int sample_word(Matrix *probs, double temperature)
+{
+    int best = matrix_argmax(probs);
+    if (temperature <= 0.0)
+        return best;
+
+    // Divide by the best probability first so pow() stays in range
+    double best_prob = probs->entries[best][0];
+    double total = 0.0;
+    for (int i = 0; i < probs->rows; i++)
+    {
+        total += pow(probs->entries[i][0] / best_prob, 1.0 / temperature);
+    }
+
+    double r = ((double)rand() / ((double)RAND_MAX + 1.0)) * total;
+    for (int i = 0; i < probs->rows; i++)
+    {
+        r -= pow(probs->entries[i][0] / best_prob, 1.0 / temperature);
+        if (r < 0.0)
+            return i;
+    }
+    return best; // only reached through rounding
+}
+
+char *rnn_generate_text(Vocabulary *v, RNN *rnn, char *initial_input, int length, double temperature)
 {
     if (!v || !rnn || !initial_input || length <= 0)
     {
@@ -386,7 +414,7 @@ char *rnn_generate_text(Vocabulary *v, RNN *rnn, char *initial_input, int length
             exit(EXIT_FAILURE);
         }
 
-        int predicted_word_index = matrix_argmax(output);
+        int predicted_word_index = sample_word(output, temperature);
 
         // Stop at the end of the sentence
         if (predicted_word_index == VOCAB_EOS)

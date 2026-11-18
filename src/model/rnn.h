@@ -30,8 +30,8 @@ Matrix *rnn_forward(RNN *rnn, Matrix *input);
 // Returns the summed cross-entropy loss over the sequence.
 double rnn_train_sequence(RNN *rnn, Matrix **inputs, Matrix **targets, int length);
 
-// Text generation
-char *rnn_generate_text(Vocabulary *v, RNN *rnn, char *initial_input, int length);
+// Text generation. temperature <= 0 always picks the most likely word, higher values sample more freely.
+char *rnn_generate_text(Vocabulary *v, RNN *rnn, char *initial_input, int length, double temperature);
 
 // Serialize / deserialize
 void rnn_save(RNN *rnn, const char *filename);

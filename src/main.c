@@ -221,7 +221,8 @@ int main(void)
     // 5. Generate some text
     // ----------------------------------------------------------------------
     const char *input_text = "Matrix";
-    char *next_word_predictions = rnn_generate_text(v, rnn, (char *)input_text, 5);
+    double temperature = 0.8; // 0 = always pick the most likely word
+    char *next_word_predictions = rnn_generate_text(v, rnn, (char *)input_text, 5, temperature);
     printf("Input text: %s\n", input_text);
     printf("Next word predictions: %s\n", next_word_predictions);
 

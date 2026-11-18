@@ -34,10 +34,11 @@ After compiling and running the program, the model will:
 2. Generate text based on the input word "Matrix."
 3. Print the generated text to the console.
 
-To modify the input word or the number of generated words, edit the following lines in main.c:
+To modify the input word, the number of generated words or how random the output is, edit the following lines in main.c:
 ````c
 const char *input_text = "Matrix"; // Change the input word
-char *next_word_predictions = rnn_generate_text(v, rnn, (char *)input_text, 5); // Change the number of words to generate
+double temperature = 0.8; // 0 = always pick the most likely word, higher = more random
+char *next_word_predictions = rnn_generate_text(v, rnn, (char *)input_text, 5, temperature); // Change the number of words to generate
 ````
 
 ## Training Data
