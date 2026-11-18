@@ -159,10 +159,9 @@ void matrix_save(Matrix *m, FILE *file)
     {
         for (int j = 0; j < m->cols; j++)
         {
-            fprintf(file, "%.6f\n", m->entries[i][j]);
+            fprintf(file, "%.17g\n", m->entries[i][j]);
         }
     }
-    printf("Successfully saved matrix to file\n");
 }
 
 Matrix *matrix_load(FILE *file)
