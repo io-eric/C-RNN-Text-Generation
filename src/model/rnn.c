@@ -215,6 +215,13 @@ void rnn_backward(RNN *rnn, Matrix *input, Matrix *target, Matrix *output)
         exit(EXIT_FAILURE);
     }
 
+    // Backprop through tanh: d/dx tanh(x) = 1 - tanh(x)^2, and hidden_state already holds tanh(x)
+    for (int i = 0; i < hidden_error->rows; i++)
+    {
+        double h = rnn->hidden_state->entries[i][0];
+        hidden_error->entries[i][0] *= (1.0 - h * h);
+    }
+
     // Gradient for hidden weights: dW_h = hidden_error * input^T
     Matrix *input_transpose = matrix_transpose(input);
     if (!input_transpose)
