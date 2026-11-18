@@ -221,7 +221,7 @@ int main(void)
         }
 
         double avg_epoch_loss = epoch_loss / (double)total_pairs;
-        if (epoch % 1000 == 0)
+        if (epoch % 1000 == 0 || epoch == epochs - 1)
         {
             printf("Epoch %d, Average Loss: %f\n", epoch, avg_epoch_loss);
         }

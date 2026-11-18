@@ -60,11 +60,14 @@ After training, the model generates text based on the input word. For example (a
 ```c
 $ ./build.sh
 Compilation successful!
-Epoch 0, Average Loss: 0.034648
-Epoch 1000, Average Loss: 0.000403
+Epoch 0, Average Loss: 4.038023
+Epoch 1000, Average Loss: 0.207947
+Epoch 1999, Average Loss: 0.198872
 Input text: Matrix
-Next word predictions: dimensions don’t match? Shocking. don’t
+Next word predictions: dimensions don’t match? Shocking.
 ```
+
+The loss is cross-entropy, so it starts around ln(vocabulary size) and does not go to 0: the first word of a sentence (after `<bos>`) can't be predicted from the context. Generation stops when the model predicts `<eos>`, so it can return fewer words than requested.
 
 The model's performance is limited by the small dataset and simple architecture, but it demonstrates the basic principles of RNNs and text generation.
 
