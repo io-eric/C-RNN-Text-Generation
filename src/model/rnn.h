@@ -10,8 +10,9 @@ typedef struct
     int output_size;      // Size of the output vector (e.g., vocabulary size)
     double learning_rate; // Learning rate for training
 
-    Matrix *hidden_weights; // Weights for the hidden state (input -> hidden)
-    Matrix *output_weights; // Weights for the output (hidden -> output)
+    Matrix *hidden_weights;    // Weights for the hidden state (input -> hidden)
+    Matrix *recurrent_weights; // Weights for the previous hidden state (hidden -> hidden)
+    Matrix *output_weights;    // Weights for the output (hidden -> output)
     Matrix *hidden_state;   // Current hidden state of the RNN
 } RNN;
 
