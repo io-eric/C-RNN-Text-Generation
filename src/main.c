@@ -96,11 +96,13 @@ int main(void)
 
     Matrix **input_vectors = (Matrix **)malloc((size_t)total_pairs * sizeof(Matrix *));
     Matrix **target_vectors = (Matrix **)malloc((size_t)total_pairs * sizeof(Matrix *));
-    if (!input_vectors || !target_vectors)
+    int *starts_sentence = (int *)malloc((size_t)total_pairs * sizeof(int)); // 1 if pair is the first of its sentence
+    if (!input_vectors || !target_vectors || !starts_sentence)
     {
         fprintf(stderr, "Memory allocation failed for training pairs\n");
         free(input_vectors);
         free(target_vectors);
+        free(starts_sentence);
         vocabulary_free(v);
         return EXIT_FAILURE;
     }
@@ -121,17 +123,21 @@ int main(void)
             }
             free(input_vectors);
             free(target_vectors);
+            free(starts_sentence);
             vocabulary_free(v);
             return EXIT_FAILURE;
         }
 
         char *prev = strtok(sentence, " ");
         char *curr = strtok(NULL, " ");
+        int first_pair = 1;
 
         while (curr != NULL)
         {
             input_vectors[pair_index] = create_one_hot_vector(v, prev);
             target_vectors[pair_index] = create_one_hot_vector(v, curr);
+            starts_sentence[pair_index] = first_pair;
+            first_pair = 0;
             pair_index++;
 
             prev = curr;
@@ -152,6 +158,7 @@ int main(void)
         }
         free(input_vectors);
         free(target_vectors);
+        free(starts_sentence);
         vocabulary_free(v);
         return EXIT_FAILURE;
     }
@@ -175,6 +182,7 @@ int main(void)
         }
         free(input_vectors);
         free(target_vectors);
+        free(starts_sentence);
         vocabulary_free(v);
         return EXIT_FAILURE;
     }
@@ -182,7 +190,8 @@ int main(void)
     // ----------------------------------------------------------------------
     // 4. Training loop
     //    Uses the new rnn_backward signature: (rnn, input, target, output)
-    //    We reset the hidden state for each pair to keep behavior simple.
+    //    The hidden state is reset at the start of each sentence and carried
+    //    across the words in it, the same way rnn_generate_text uses it.
     // ----------------------------------------------------------------------
     int epochs = 2000;
 
@@ -192,9 +201,12 @@ int main(void)
 
         for (int i = 0; i < total_pairs; i++)
         {
-            // Reset hidden state per sample for now (no BPTT)
-            matrix_free(rnn->hidden_state);
-            rnn->hidden_state = matrix_zero(rnn->hidden_size, 1);
+            // Reset hidden state at the start of each sentence (no BPTT)
+            if (starts_sentence[i])
+            {
+                matrix_free(rnn->hidden_state);
+                rnn->hidden_state = matrix_zero(rnn->hidden_size, 1);
+            }
 
             Matrix *output = rnn_forward(rnn, input_vectors[i]);
             double loss = matrix_cross_entropy(output, target_vectors[i]);
@@ -233,6 +245,7 @@ int main(void)
     }
     free(input_vectors);
     free(target_vectors);
+    free(starts_sentence);
 
     rnn_free(rnn);
     vocabulary_free(v);
