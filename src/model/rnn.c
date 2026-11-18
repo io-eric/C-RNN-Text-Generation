@@ -136,145 +136,121 @@ Matrix *rnn_forward(RNN *rnn, Matrix *input)
     return probs;
 }
 
-void rnn_backward(RNN *rnn, Matrix *input, Matrix *target, Matrix *output)
+// sum += m
+static void matrix_accumulate(Matrix *sum, Matrix *m)
 {
-    if (!rnn || !input || !target || !output)
+    for (int i = 0; i < sum->rows; i++)
     {
-        fprintf(stderr, "rnn_backward: NULL argument\n");
+        for (int j = 0; j < sum->cols; j++)
+        {
+            sum->entries[i][j] += m->entries[i][j];
+        }
+    }
+}
+
+// weights = weights - lr * gradient
+static void apply_gradient(Matrix **weights, Matrix *gradient, double learning_rate)
+{
+    Matrix *scaled_gradient = matrix_scale(learning_rate, gradient);
+    Matrix *updated_weights = matrix_subtract(*weights, scaled_gradient);
+    matrix_free(scaled_gradient);
+    matrix_free(*weights);
+    *weights = updated_weights;
+}
+
+double rnn_train_sequence(RNN *rnn, Matrix **inputs, Matrix **targets, int length)
+{
+    if (!rnn || !inputs || !targets || length <= 0)
+    {
+        fprintf(stderr, "rnn_train_sequence: invalid arguments\n");
         exit(EXIT_FAILURE);
     }
 
-    // Compute the error in the output layer for softmax + cross-entropy:
-    // output is expected to be probabilities; with one-hot targets,
-    // dL/dlogits simplifies to (probs - target)
-    Matrix *output_error = matrix_subtract(output, target);
-    if (!output_error)
+    // Keep every hidden state and output of the sequence for the backward pass.
+    // hidden_states[0] is the state before the first word, hidden_states[t + 1] the state after word t.
+    Matrix **hidden_states = (Matrix **)malloc((size_t)(length + 1) * sizeof(Matrix *));
+    Matrix **outputs = (Matrix **)malloc((size_t)length * sizeof(Matrix *));
+    if (!hidden_states || !outputs)
     {
-        fprintf(stderr, "rnn_backward: output_error allocation failed\n");
+        fprintf(stderr, "rnn_train_sequence: allocation failed\n");
         exit(EXIT_FAILURE);
     }
 
-    // Hidden error: hidden_error = W_o^T * output_error
-    // Computed before W_o is updated so it uses the same weights as the forward pass
+    // Forward pass over the whole sequence, starting from a zero hidden state
+    matrix_free(rnn->hidden_state);
+    rnn->hidden_state = matrix_zero(rnn->hidden_size, 1);
+    hidden_states[0] = matrix_copy(rnn->hidden_state);
+
+    double loss = 0.0;
+    for (int t = 0; t < length; t++)
+    {
+        outputs[t] = rnn_forward(rnn, inputs[t]);
+        hidden_states[t + 1] = matrix_copy(rnn->hidden_state);
+        loss += matrix_cross_entropy(outputs[t], targets[t]);
+    }
+
+    // Backward pass through time. Gradients are summed over all steps and
+    // applied at the end, so every step uses the weights from the forward pass.
+    Matrix *hidden_weights_gradient = matrix_zero(rnn->hidden_size, rnn->input_size);
+    Matrix *output_weights_gradient = matrix_zero(rnn->output_size, rnn->hidden_size);
     Matrix *output_weights_transpose = matrix_transpose(rnn->output_weights);
-    if (!output_weights_transpose)
+    Matrix *next_hidden_error = matrix_zero(rnn->hidden_size, 1); // error flowing back from step t + 1
+
+    for (int t = length - 1; t >= 0; t--)
     {
-        fprintf(stderr, "rnn_backward: output_weights_transpose allocation failed\n");
+        // Softmax + cross-entropy: dL/dlogits = probs - target
+        Matrix *output_error = matrix_subtract(outputs[t], targets[t]);
+
+        // dW_o += output_error * h_t^T
+        Matrix *hidden_state_transpose = matrix_transpose(hidden_states[t + 1]);
+        Matrix *output_step_gradient = matrix_dot(output_error, hidden_state_transpose);
+        matrix_accumulate(output_weights_gradient, output_step_gradient);
+        matrix_free(hidden_state_transpose);
+        matrix_free(output_step_gradient);
+
+        // dL/dh_t = W_o^T * output_error + error from step t + 1
+        Matrix *hidden_error = matrix_dot(output_weights_transpose, output_error);
+        matrix_accumulate(hidden_error, next_hidden_error);
         matrix_free(output_error);
-        exit(EXIT_FAILURE);
+
+        // Backprop through tanh: d/dx tanh(x) = 1 - tanh(x)^2, and h_t already holds tanh(x)
+        for (int i = 0; i < hidden_error->rows; i++)
+        {
+            double h = hidden_states[t + 1]->entries[i][0];
+            hidden_error->entries[i][0] *= (1.0 - h * h);
+        }
+
+        // dW_h += hidden_error * x_t^T
+        Matrix *input_transpose = matrix_transpose(inputs[t]);
+        Matrix *hidden_step_gradient = matrix_dot(hidden_error, input_transpose);
+        matrix_accumulate(hidden_weights_gradient, hidden_step_gradient);
+        matrix_free(input_transpose);
+        matrix_free(hidden_step_gradient);
+
+        // h_t = tanh(W_h * x_t + h_{t-1}), so the error passes straight on to h_{t-1}
+        matrix_free(next_hidden_error);
+        next_hidden_error = hidden_error;
     }
 
-    Matrix *hidden_error = matrix_dot(output_weights_transpose, output_error);
-    matrix_free(output_weights_transpose);
-    if (!hidden_error)
-    {
-        fprintf(stderr, "rnn_backward: hidden_error allocation failed\n");
-        matrix_free(output_error);
-        exit(EXIT_FAILURE);
-    }
+    apply_gradient(&rnn->hidden_weights, hidden_weights_gradient, rnn->learning_rate);
+    apply_gradient(&rnn->output_weights, output_weights_gradient, rnn->learning_rate);
 
-    // Gradient for output weights: dW_o = output_error * hidden_state^T
-    Matrix *hidden_state_transpose = matrix_transpose(rnn->hidden_state);
-    if (!hidden_state_transpose)
-    {
-        fprintf(stderr, "rnn_backward: hidden_state_transpose allocation failed\n");
-        matrix_free(output_error);
-        exit(EXIT_FAILURE);
-    }
-
-    Matrix *output_weights_gradient = matrix_dot(output_error, hidden_state_transpose);
-    matrix_free(hidden_state_transpose);
-    if (!output_weights_gradient)
-    {
-        fprintf(stderr, "rnn_backward: output_weights_gradient allocation failed\n");
-        matrix_free(output_error);
-        exit(EXIT_FAILURE);
-    }
-
-    // Update output weights: W_o = W_o - lr * dW_o
-    Matrix *scaled_output_weights_gradient = matrix_scale(rnn->learning_rate, output_weights_gradient);
-    if (!scaled_output_weights_gradient)
-    {
-        fprintf(stderr, "rnn_backward: scaled_output_weights_gradient allocation failed\n");
-        matrix_free(output_weights_gradient);
-        matrix_free(output_error);
-        exit(EXIT_FAILURE);
-    }
-
-    Matrix *updated_output_weights = matrix_subtract(rnn->output_weights, scaled_output_weights_gradient);
-    if (!updated_output_weights)
-    {
-        fprintf(stderr, "rnn_backward: updated_output_weights allocation failed\n");
-        matrix_free(scaled_output_weights_gradient);
-        matrix_free(output_weights_gradient);
-        matrix_free(output_error);
-        exit(EXIT_FAILURE);
-    }
-
-    matrix_free(rnn->output_weights);
-    rnn->output_weights = updated_output_weights;
-    matrix_free(scaled_output_weights_gradient);
-    matrix_free(output_weights_gradient);
-
-    // Backprop through tanh: d/dx tanh(x) = 1 - tanh(x)^2, and hidden_state already holds tanh(x)
-    for (int i = 0; i < hidden_error->rows; i++)
-    {
-        double h = rnn->hidden_state->entries[i][0];
-        hidden_error->entries[i][0] *= (1.0 - h * h);
-    }
-
-    // Gradient for hidden weights: dW_h = hidden_error * input^T
-    Matrix *input_transpose = matrix_transpose(input);
-    if (!input_transpose)
-    {
-        fprintf(stderr, "rnn_backward: input_transpose allocation failed\n");
-        matrix_free(hidden_error);
-        matrix_free(output_error);
-        exit(EXIT_FAILURE);
-    }
-
-    Matrix *hidden_weights_gradient = matrix_dot(hidden_error, input_transpose);
-    matrix_free(input_transpose);
-    if (!hidden_weights_gradient)
-    {
-        fprintf(stderr, "rnn_backward: hidden_weights_gradient allocation failed\n");
-        matrix_free(hidden_error);
-        matrix_free(output_error);
-        exit(EXIT_FAILURE);
-    }
-
-    // Update hidden weights: W_h = W_h - lr * dW_h
-    Matrix *scaled_hidden_weights_gradient = matrix_scale(rnn->learning_rate, hidden_weights_gradient);
-    if (!scaled_hidden_weights_gradient)
-    {
-        fprintf(stderr, "rnn_backward: scaled_hidden_weights_gradient allocation failed\n");
-        matrix_free(hidden_weights_gradient);
-        matrix_free(hidden_error);
-        matrix_free(output_error);
-        exit(EXIT_FAILURE);
-    }
-
-    Matrix *updated_hidden_weights = matrix_subtract(rnn->hidden_weights, scaled_hidden_weights_gradient);
-    if (!updated_hidden_weights)
-    {
-        fprintf(stderr, "rnn_backward: updated_hidden_weights allocation failed\n");
-        matrix_free(scaled_hidden_weights_gradient);
-        matrix_free(hidden_weights_gradient);
-        matrix_free(hidden_error);
-        matrix_free(output_error);
-        exit(EXIT_FAILURE);
-    }
-
-    matrix_free(rnn->hidden_weights);
-    rnn->hidden_weights = updated_hidden_weights;
-    matrix_free(scaled_hidden_weights_gradient);
     matrix_free(hidden_weights_gradient);
+    matrix_free(output_weights_gradient);
+    matrix_free(output_weights_transpose);
+    matrix_free(next_hidden_error);
+    for (int t = 0; t < length; t++)
+    {
+        matrix_free(outputs[t]);
+    }
+    for (int t = 0; t <= length; t++)
+    {
+        matrix_free(hidden_states[t]);
+    }
+    free(outputs);
+    free(hidden_states);
 
-    // For this simple one-step training, we don't propagate hidden_error back in time.
-    // Caller can choose when to reset rnn->hidden_state (e.g., between sequences).
-
-    matrix_free(output_error);
-    matrix_free(hidden_error);
+    return loss;
 }
 
 char *rnn_generate_text(Vocabulary *v, RNN *rnn, char *initial_input, int length)

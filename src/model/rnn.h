@@ -22,8 +22,10 @@ void rnn_free(RNN *rnn);
 // Forward pass: given an input vector, update hidden_state and produce output logits
 Matrix *rnn_forward(RNN *rnn, Matrix *input);
 
-// Backward pass: given input, target, and the forward output, update weights
-void rnn_backward(RNN *rnn, Matrix *input, Matrix *target, Matrix *output);
+// Train on one whole sequence with backpropagation through time.
+// inputs[t] is the one-hot word at step t, targets[t] the word that should follow it.
+// Returns the summed cross-entropy loss over the sequence.
+double rnn_train_sequence(RNN *rnn, Matrix **inputs, Matrix **targets, int length);
 
 // Text generation
 char *rnn_generate_text(Vocabulary *v, RNN *rnn, char *initial_input, int length);
