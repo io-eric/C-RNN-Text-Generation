@@ -154,6 +154,25 @@ void rnn_backward(RNN *rnn, Matrix *input, Matrix *target, Matrix *output)
         exit(EXIT_FAILURE);
     }
 
+    // Hidden error: hidden_error = W_o^T * output_error
+    // Computed before W_o is updated so it uses the same weights as the forward pass
+    Matrix *output_weights_transpose = matrix_transpose(rnn->output_weights);
+    if (!output_weights_transpose)
+    {
+        fprintf(stderr, "rnn_backward: output_weights_transpose allocation failed\n");
+        matrix_free(output_error);
+        exit(EXIT_FAILURE);
+    }
+
+    Matrix *hidden_error = matrix_dot(output_weights_transpose, output_error);
+    matrix_free(output_weights_transpose);
+    if (!hidden_error)
+    {
+        fprintf(stderr, "rnn_backward: hidden_error allocation failed\n");
+        matrix_free(output_error);
+        exit(EXIT_FAILURE);
+    }
+
     // Gradient for output weights: dW_o = output_error * hidden_state^T
     Matrix *hidden_state_transpose = matrix_transpose(rnn->hidden_state);
     if (!hidden_state_transpose)
@@ -196,24 +215,6 @@ void rnn_backward(RNN *rnn, Matrix *input, Matrix *target, Matrix *output)
     rnn->output_weights = updated_output_weights;
     matrix_free(scaled_output_weights_gradient);
     matrix_free(output_weights_gradient);
-
-    // Hidden error: hidden_error = W_o^T * output_error
-    Matrix *output_weights_transpose = matrix_transpose(rnn->output_weights);
-    if (!output_weights_transpose)
-    {
-        fprintf(stderr, "rnn_backward: output_weights_transpose allocation failed\n");
-        matrix_free(output_error);
-        exit(EXIT_FAILURE);
-    }
-
-    Matrix *hidden_error = matrix_dot(output_weights_transpose, output_error);
-    matrix_free(output_weights_transpose);
-    if (!hidden_error)
-    {
-        fprintf(stderr, "rnn_backward: hidden_error allocation failed\n");
-        matrix_free(output_error);
-        exit(EXIT_FAILURE);
-    }
 
     // Backprop through tanh: d/dx tanh(x) = 1 - tanh(x)^2, and hidden_state already holds tanh(x)
     for (int i = 0; i < hidden_error->rows; i++)
