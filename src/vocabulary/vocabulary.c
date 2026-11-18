@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 
 /* Simple string hash for vocabulary words */
 static unsigned int hash_word(const char *word)
@@ -185,6 +186,80 @@ void vocabulary_print(const Vocabulary *v)
             entry = entry->next;
         }
     }
+}
+
+static int is_punctuation_char(char c)
+{
+    return c != '\0' && strchr(".,?!;:", c) != NULL;
+}
+
+int vocabulary_is_punctuation(const char *token)
+{
+    return token != NULL && is_punctuation_char(token[0]);
+}
+
+char **vocabulary_tokenize(const char *text, int *count)
+{
+    *count = 0;
+    if (!text)
+        return NULL;
+
+    /* Every token is at least one character long, so strlen + 1 slots is always enough */
+    char **tokens = (char **)malloc((strlen(text) + 1) * sizeof(char *));
+    if (!tokens)
+    {
+        perror("Failed to allocate memory for tokens");
+        return NULL;
+    }
+
+    const char *p = text;
+    while (*p)
+    {
+        if (isspace((unsigned char)*p))
+        {
+            p++;
+            continue;
+        }
+
+        /* A token is either a run of punctuation or a run of anything else up to a space or punctuation */
+        const char *start = p;
+        if (is_punctuation_char(*p))
+        {
+            while (is_punctuation_char(*p))
+                p++;
+        }
+        else
+        {
+            while (*p && !isspace((unsigned char)*p) && !is_punctuation_char(*p))
+                p++;
+        }
+
+        size_t length = (size_t)(p - start);
+        char *token = (char *)malloc(length + 1);
+        if (!token)
+        {
+            perror("Failed to allocate memory for token");
+            vocabulary_free_tokens(tokens, *count);
+            *count = 0;
+            return NULL;
+        }
+        memcpy(token, start, length);
+        token[length] = '\0';
+        tokens[(*count)++] = token;
+    }
+
+    return tokens;
+}
+
+void vocabulary_free_tokens(char **tokens, int count)
+{
+    if (!tokens)
+        return;
+    for (int i = 0; i < count; i++)
+    {
+        free(tokens[i]);
+    }
+    free(tokens);
 }
 
 /* Create a one-hot encoded column vector for a given word.

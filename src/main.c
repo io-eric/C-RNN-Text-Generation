@@ -5,25 +5,18 @@
 #include "model/rnn.h"
 #include "vocabulary/vocabulary.h"
 
-// Simple tokenizer that splits on spaces only
+// Number of tokens in a sentence, using the same tokenizer as everything else
 static int count_tokens(const char *sentence)
 {
-    char *copy = strdup(sentence);
-    if (!copy)
+    int count;
+    char **tokens = vocabulary_tokenize(sentence, &count);
+    if (!tokens)
     {
-        fprintf(stderr, "count_tokens: strdup failed\n");
+        fprintf(stderr, "count_tokens: tokenize failed\n");
         exit(EXIT_FAILURE);
     }
 
-    int count = 0;
-    char *tok = strtok(copy, " ");
-    while (tok)
-    {
-        count++;
-        tok = strtok(NULL, " ");
-    }
-
-    free(copy);
+    vocabulary_free_tokens(tokens, count);
     return count;
 }
 
@@ -52,22 +45,21 @@ int main(void)
     // ----------------------------------------------------------------------
     for (int i = 0; i < num_sentences; i++)
     {
-        char *sentence = strdup(training_data[i]);
-        if (!sentence)
+        int num_tokens;
+        char **tokens = vocabulary_tokenize(training_data[i], &num_tokens);
+        if (!tokens)
         {
-            fprintf(stderr, "strdup failed while building vocabulary\n");
+            fprintf(stderr, "tokenize failed while building vocabulary\n");
             vocabulary_free(v);
             return EXIT_FAILURE;
         }
 
-        char *word = strtok(sentence, " ");
-        while (word != NULL)
+        for (int k = 0; k < num_tokens; k++)
         {
-            vocabulary_add_word(v, word);
-            word = strtok(NULL, " ");
+            vocabulary_add_word(v, tokens[k]);
         }
 
-        free(sentence);
+        vocabulary_free_tokens(tokens, num_tokens);
     }
 
     // ----------------------------------------------------------------------
@@ -109,10 +101,11 @@ int main(void)
     int pair_index = 0;
     for (int i = 0; i < num_sentences; i++)
     {
-        char *sentence = strdup(training_data[i]);
-        if (!sentence)
+        int num_tokens;
+        char **tokens = vocabulary_tokenize(training_data[i], &num_tokens);
+        if (!tokens)
         {
-            fprintf(stderr, "strdup failed while creating training pairs\n");
+            fprintf(stderr, "tokenize failed while creating training pairs\n");
             // Cleanup partial allocations
             for (int k = 0; k < pair_index; k++)
             {
@@ -127,28 +120,21 @@ int main(void)
             return EXIT_FAILURE;
         }
 
-        // Every sentence starts with <bos> and its last word predicts <eos>
-        char *prev = "<bos>";
-        char *curr = strtok(sentence, " ");
+        // Every sentence starts with <bos> and its last token predicts <eos>
         sentence_start[i] = pair_index;
 
-        while (prev != NULL)
+        for (int k = 0; k <= num_tokens; k++)
         {
-            char *target = curr ? curr : "<eos>";
+            char *prev = (k == 0) ? "<bos>" : tokens[k - 1];
+            char *target = (k == num_tokens) ? "<eos>" : tokens[k];
 
             input_vectors[pair_index] = create_one_hot_vector(v, prev);
             target_vectors[pair_index] = create_one_hot_vector(v, target);
             pair_index++;
-
-            prev = curr;
-            if (curr != NULL)
-            {
-                curr = strtok(NULL, " ");
-            }
         }
 
         sentence_length[i] = pair_index - sentence_start[i];
-        free(sentence);
+        vocabulary_free_tokens(tokens, num_tokens);
     }
 
     if (pair_index != total_pairs)
@@ -222,7 +208,7 @@ int main(void)
     // ----------------------------------------------------------------------
     const char *input_text = "Matrix";
     double temperature = 0.8; // 0 = always pick the most likely word
-    char *next_word_predictions = rnn_generate_text(v, rnn, (char *)input_text, 5, temperature);
+    char *next_word_predictions = rnn_generate_text(v, rnn, (char *)input_text, 10, temperature);
     printf("Input text: %s\n", input_text);
     printf("Next word predictions: %s\n", next_word_predictions);
 

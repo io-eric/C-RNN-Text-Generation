@@ -38,7 +38,7 @@ To modify the input word, the number of generated words or how random the output
 ````c
 const char *input_text = "Matrix"; // Change the input word
 double temperature = 0.8; // 0 = always pick the most likely word, higher = more random
-char *next_word_predictions = rnn_generate_text(v, rnn, (char *)input_text, 5, temperature); // Change the number of words to generate
+char *next_word_predictions = rnn_generate_text(v, rnn, (char *)input_text, 10, temperature); // Change the number of words to generate
 ````
 
 ## Training Data

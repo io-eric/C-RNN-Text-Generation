@@ -68,6 +68,21 @@ char *vocabulary_get_word(Vocabulary *v, int index);
 void vocabulary_print(const Vocabulary *v);
 
 /**
+ * Split text into tokens. Words are separated by whitespace, and runs of
+ * punctuation (. , ? ! ; :) become their own tokens, so "match?" -> "match" "?"
+ * and "stuff..." -> "stuff" "...". Apostrophes stay inside words ("don’t").
+ * Returns an array of newly allocated strings and stores its length in *count,
+ * or NULL on allocation failure. Free with vocabulary_free_tokens.
+ */
+char **vocabulary_tokenize(const char *text, int *count);
+void vocabulary_free_tokens(char **tokens, int count);
+
+/**
+ * Returns 1 if the token is punctuation produced by vocabulary_tokenize.
+ */
+int vocabulary_is_punctuation(const char *token);
+
+/**
  * Create a one-hot encoded vector of size (v->size x 1) for the given word.
  * Exits the program if the word is not found.
  */

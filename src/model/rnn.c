@@ -378,15 +378,42 @@ char *rnn_generate_text(Vocabulary *v, RNN *rnn, char *initial_input, int length
     matrix_free(rnn_forward(rnn, bos));
     matrix_free(bos);
 
-    // Fall back to <unk> for words the model has never seen
-    if (vocabulary_get_index(v, initial_input) == -1)
+    // Split the prompt the same way the training data was split
+    int num_tokens;
+    char **tokens = vocabulary_tokenize(initial_input, &num_tokens);
+    if (!tokens || num_tokens == 0)
     {
-        fprintf(stderr, "Warning: '%s' is not in the vocabulary, using <unk>\n", initial_input);
-        initial_input = "<unk>";
+        fprintf(stderr, "rnn_generate_text: prompt has no tokens\n");
+        exit(EXIT_FAILURE);
     }
 
-    // Create one-hot of initial input
-    Matrix *input = create_one_hot_vector(v, initial_input);
+    // Fall back to <unk> for words the model has never seen
+    for (int k = 0; k < num_tokens; k++)
+    {
+        if (vocabulary_get_index(v, tokens[k]) == -1)
+        {
+            fprintf(stderr, "Warning: '%s' is not in the vocabulary, using <unk>\n", tokens[k]);
+            free(tokens[k]);
+            tokens[k] = strdup("<unk>");
+            if (!tokens[k])
+            {
+                fprintf(stderr, "rnn_generate_text: strdup failed\n");
+                exit(EXIT_FAILURE);
+            }
+        }
+    }
+
+    // Feed every prompt token except the last, the last one is the input for the first prediction
+    for (int k = 0; k < num_tokens - 1; k++)
+    {
+        Matrix *prompt_input = create_one_hot_vector(v, tokens[k]);
+        matrix_free(rnn_forward(rnn, prompt_input));
+        matrix_free(prompt_input);
+    }
+
+    // Create one-hot of the last prompt token
+    Matrix *input = create_one_hot_vector(v, tokens[num_tokens - 1]);
+    vocabulary_free_tokens(tokens, num_tokens);
     if (!input)
     {
         fprintf(stderr, "rnn_generate_text: failed to create initial input vector\n");
@@ -429,8 +456,8 @@ char *rnn_generate_text(Vocabulary *v, RNN *rnn, char *initial_input, int length
             predicted_word = "<unk>";
         }
 
-        // Append word to buffer
-        if (generated_text[0] != '\0')
+        // Append word to buffer, punctuation goes right after the previous word
+        if (generated_text[0] != '\0' && !vocabulary_is_punctuation(predicted_word))
         {
             strcat(generated_text, " ");
         }
