@@ -13,6 +13,8 @@ typedef struct
     Matrix *hidden_weights;    // Weights for the hidden state (input -> hidden)
     Matrix *recurrent_weights; // Weights for the previous hidden state (hidden -> hidden)
     Matrix *output_weights;    // Weights for the output (hidden -> output)
+    Matrix *hidden_bias;       // Bias added before the tanh
+    Matrix *output_bias;       // Bias added to the output logits
     Matrix *hidden_state;   // Current hidden state of the RNN
 } RNN;
 

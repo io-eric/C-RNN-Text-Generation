@@ -56,6 +56,10 @@ RNN *rnn_init(int input_size, int hidden_size, int output_size, double learning_
     }
     matrix_xavier_randomize(rnn->output_weights, hidden_size, output_size);
 
+    // Initialize biases to zeros (matrix_zero exits on allocation failure)
+    rnn->hidden_bias = matrix_zero(hidden_size, 1);
+    rnn->output_bias = matrix_zero(output_size, 1);
+
     // Initialize hidden state to zeros
     rnn->hidden_state = matrix_zero(hidden_size, 1);
     if (!rnn->hidden_state)
@@ -64,6 +68,8 @@ RNN *rnn_init(int input_size, int hidden_size, int output_size, double learning_
         matrix_free(rnn->hidden_weights);
         matrix_free(rnn->recurrent_weights);
         matrix_free(rnn->output_weights);
+        matrix_free(rnn->hidden_bias);
+        matrix_free(rnn->output_bias);
         free(rnn);
         exit(EXIT_FAILURE);
     }
@@ -81,6 +87,10 @@ void rnn_free(RNN *rnn)
             matrix_free(rnn->recurrent_weights);
         if (rnn->output_weights)
             matrix_free(rnn->output_weights);
+        if (rnn->hidden_bias)
+            matrix_free(rnn->hidden_bias);
+        if (rnn->output_bias)
+            matrix_free(rnn->output_bias);
         if (rnn->hidden_state)
             matrix_free(rnn->hidden_state);
         free(rnn);
@@ -95,7 +105,7 @@ Matrix *rnn_forward(RNN *rnn, Matrix *input)
         exit(EXIT_FAILURE);
     }
 
-    // hidden_state = tanh(W_h * input + W_hh * hidden_state)
+    // hidden_state = tanh(W_h * input + W_hh * hidden_state + b_h)
     Matrix *hidden_input = matrix_dot(rnn->hidden_weights, input);
     if (!hidden_input)
     {
@@ -110,9 +120,17 @@ Matrix *rnn_forward(RNN *rnn, Matrix *input)
         exit(EXIT_FAILURE);
     }
 
-    Matrix *new_hidden_state = matrix_add(hidden_input, recurrent_input);
+    Matrix *hidden_sum = matrix_add(hidden_input, recurrent_input);
     matrix_free(hidden_input);
     matrix_free(recurrent_input);
+    if (!hidden_sum)
+    {
+        fprintf(stderr, "rnn_forward: hidden_sum allocation failed\n");
+        exit(EXIT_FAILURE);
+    }
+
+    Matrix *new_hidden_state = matrix_add(hidden_sum, rnn->hidden_bias);
+    matrix_free(hidden_sum);
     if (!new_hidden_state)
     {
         fprintf(stderr, "rnn_forward: new_hidden_state allocation failed\n");
@@ -137,9 +155,17 @@ Matrix *rnn_forward(RNN *rnn, Matrix *input)
         exit(EXIT_FAILURE);
     }
 
-    // Compute output logits: logits = W_o * hidden_state
-    Matrix *logits = matrix_dot(rnn->output_weights, activated_hidden);
+    // Compute output logits: logits = W_o * hidden_state + b_o
+    Matrix *weighted_output = matrix_dot(rnn->output_weights, activated_hidden);
     matrix_free(activated_hidden);
+    if (!weighted_output)
+    {
+        fprintf(stderr, "rnn_forward: weighted_output allocation failed\n");
+        exit(EXIT_FAILURE);
+    }
+
+    Matrix *logits = matrix_add(weighted_output, rnn->output_bias);
+    matrix_free(weighted_output);
     if (!logits)
     {
         fprintf(stderr, "rnn_forward: logits allocation failed\n");
@@ -217,6 +243,8 @@ double rnn_train_sequence(RNN *rnn, Matrix **inputs, Matrix **targets, int lengt
     Matrix *hidden_weights_gradient = matrix_zero(rnn->hidden_size, rnn->input_size);
     Matrix *recurrent_weights_gradient = matrix_zero(rnn->hidden_size, rnn->hidden_size);
     Matrix *output_weights_gradient = matrix_zero(rnn->output_size, rnn->hidden_size);
+    Matrix *hidden_bias_gradient = matrix_zero(rnn->hidden_size, 1);
+    Matrix *output_bias_gradient = matrix_zero(rnn->output_size, 1);
     Matrix *output_weights_transpose = matrix_transpose(rnn->output_weights);
     Matrix *recurrent_weights_transpose = matrix_transpose(rnn->recurrent_weights);
     Matrix *next_hidden_error = matrix_zero(rnn->hidden_size, 1); // error flowing back from step t + 1
@@ -233,6 +261,9 @@ double rnn_train_sequence(RNN *rnn, Matrix **inputs, Matrix **targets, int lengt
         matrix_free(hidden_state_transpose);
         matrix_free(output_step_gradient);
 
+        // db_o += output_error
+        matrix_accumulate(output_bias_gradient, output_error);
+
         // dL/dh_t = W_o^T * output_error + error from step t + 1
         Matrix *hidden_error = matrix_dot(output_weights_transpose, output_error);
         matrix_accumulate(hidden_error, next_hidden_error);
@@ -244,6 +275,9 @@ double rnn_train_sequence(RNN *rnn, Matrix **inputs, Matrix **targets, int lengt
             double h = hidden_states[t + 1]->entries[i][0];
             hidden_error->entries[i][0] *= (1.0 - h * h);
         }
+
+        // db_h += hidden_error
+        matrix_accumulate(hidden_bias_gradient, hidden_error);
 
         // dW_h += hidden_error * x_t^T
         Matrix *input_transpose = matrix_transpose(inputs[t]);
@@ -268,10 +302,14 @@ double rnn_train_sequence(RNN *rnn, Matrix **inputs, Matrix **targets, int lengt
     apply_gradient(&rnn->hidden_weights, hidden_weights_gradient, rnn->learning_rate);
     apply_gradient(&rnn->recurrent_weights, recurrent_weights_gradient, rnn->learning_rate);
     apply_gradient(&rnn->output_weights, output_weights_gradient, rnn->learning_rate);
+    apply_gradient(&rnn->hidden_bias, hidden_bias_gradient, rnn->learning_rate);
+    apply_gradient(&rnn->output_bias, output_bias_gradient, rnn->learning_rate);
 
     matrix_free(hidden_weights_gradient);
     matrix_free(recurrent_weights_gradient);
     matrix_free(output_weights_gradient);
+    matrix_free(hidden_bias_gradient);
+    matrix_free(output_bias_gradient);
     matrix_free(output_weights_transpose);
     matrix_free(recurrent_weights_transpose);
     matrix_free(next_hidden_error);
@@ -409,6 +447,8 @@ void rnn_save(RNN *rnn, const char *filename)
     matrix_save(rnn->hidden_weights, file);
     matrix_save(rnn->recurrent_weights, file);
     matrix_save(rnn->output_weights, file);
+    matrix_save(rnn->hidden_bias, file);
+    matrix_save(rnn->output_bias, file);
     matrix_save(rnn->hidden_state, file);
 
     fclose(file);
@@ -454,14 +494,19 @@ RNN *rnn_load(const char *filename)
     Matrix *loaded_hidden_weights = matrix_load(file);
     Matrix *loaded_recurrent_weights = matrix_load(file);
     Matrix *loaded_output_weights = matrix_load(file);
+    Matrix *loaded_hidden_bias = matrix_load(file);
+    Matrix *loaded_output_bias = matrix_load(file);
     Matrix *loaded_hidden_state = matrix_load(file);
 
-    if (!loaded_hidden_weights || !loaded_recurrent_weights || !loaded_output_weights || !loaded_hidden_state)
+    if (!loaded_hidden_weights || !loaded_recurrent_weights || !loaded_output_weights ||
+        !loaded_hidden_bias || !loaded_output_bias || !loaded_hidden_state)
     {
         fprintf(stderr, "rnn_load: failed to load one or more matrices\n");
         if (loaded_hidden_weights) matrix_free(loaded_hidden_weights);
         if (loaded_recurrent_weights) matrix_free(loaded_recurrent_weights);
         if (loaded_output_weights) matrix_free(loaded_output_weights);
+        if (loaded_hidden_bias) matrix_free(loaded_hidden_bias);
+        if (loaded_output_bias) matrix_free(loaded_output_bias);
         if (loaded_hidden_state) matrix_free(loaded_hidden_state);
         rnn_free(rnn);
         fclose(file);
@@ -471,11 +516,15 @@ RNN *rnn_load(const char *filename)
     matrix_free(rnn->hidden_weights);
     matrix_free(rnn->recurrent_weights);
     matrix_free(rnn->output_weights);
+    matrix_free(rnn->hidden_bias);
+    matrix_free(rnn->output_bias);
     matrix_free(rnn->hidden_state);
 
     rnn->hidden_weights = loaded_hidden_weights;
     rnn->recurrent_weights = loaded_recurrent_weights;
     rnn->output_weights = loaded_output_weights;
+    rnn->hidden_bias = loaded_hidden_bias;
+    rnn->output_bias = loaded_output_bias;
     rnn->hidden_state = loaded_hidden_state;
 
     fclose(file);
