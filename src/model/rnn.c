@@ -295,6 +295,11 @@ char *rnn_generate_text(Vocabulary *v, RNN *rnn, char *initial_input, int length
         exit(EXIT_FAILURE);
     }
 
+    // Feed <bos> first, the same way every training sentence starts
+    Matrix *bos = create_one_hot_vector(v, "<bos>");
+    matrix_free(rnn_forward(rnn, bos));
+    matrix_free(bos);
+
     // Create one-hot of initial input
     Matrix *input = create_one_hot_vector(v, initial_input);
     if (!input)
@@ -325,6 +330,14 @@ char *rnn_generate_text(Vocabulary *v, RNN *rnn, char *initial_input, int length
         }
 
         int predicted_word_index = matrix_argmax(output);
+
+        // Stop at the end of the sentence
+        if (predicted_word_index == VOCAB_EOS)
+        {
+            matrix_free(output);
+            break;
+        }
+
         const char *predicted_word = vocabulary_get_word(v, predicted_word_index);
         if (!predicted_word)
         {
@@ -332,11 +345,11 @@ char *rnn_generate_text(Vocabulary *v, RNN *rnn, char *initial_input, int length
         }
 
         // Append word to buffer
-        strncat(generated_text, predicted_word, MAX_WORD_LENGTH);
-        if (i < length - 1)
+        if (generated_text[0] != '\0')
         {
             strcat(generated_text, " ");
         }
+        strncat(generated_text, predicted_word, MAX_WORD_LENGTH);
 
         // Prepare next input as one-hot of predicted word
         matrix_fill(input, 0.0);

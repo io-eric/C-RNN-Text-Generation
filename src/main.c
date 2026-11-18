@@ -73,18 +73,14 @@ int main(void)
     // ----------------------------------------------------------------------
     // 2. Build all adjacent word pairs across the dataset
     //    For sentence: w0 w1 w2 w3
-    //    We create pairs: (w0->w1), (w1->w2), (w2->w3)
+    //    We create pairs: (<bos>->w0), (w0->w1), (w1->w2), (w2->w3), (w3-><eos>)
     // ----------------------------------------------------------------------
 
-    // First pass: count total pairs
+    // First pass: count total pairs (one per token, plus the <eos> pair)
     int total_pairs = 0;
     for (int i = 0; i < num_sentences; i++)
     {
-        int tokens = count_tokens(training_data[i]);
-        if (tokens > 1)
-        {
-            total_pairs += (tokens - 1);
-        }
+        total_pairs += count_tokens(training_data[i]) + 1;
     }
 
     if (total_pairs == 0)
@@ -128,20 +124,26 @@ int main(void)
             return EXIT_FAILURE;
         }
 
-        char *prev = strtok(sentence, " ");
-        char *curr = strtok(NULL, " ");
+        // Every sentence starts with <bos> and its last word predicts <eos>
+        char *prev = "<bos>";
+        char *curr = strtok(sentence, " ");
         int first_pair = 1;
 
-        while (curr != NULL)
+        while (prev != NULL)
         {
+            char *target = curr ? curr : "<eos>";
+
             input_vectors[pair_index] = create_one_hot_vector(v, prev);
-            target_vectors[pair_index] = create_one_hot_vector(v, curr);
+            target_vectors[pair_index] = create_one_hot_vector(v, target);
             starts_sentence[pair_index] = first_pair;
             first_pair = 0;
             pair_index++;
 
             prev = curr;
-            curr = strtok(NULL, " ");
+            if (curr != NULL)
+            {
+                curr = strtok(NULL, " ");
+            }
         }
 
         free(sentence);
