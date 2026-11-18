@@ -93,13 +93,6 @@ int vocabulary_add_word(Vocabulary *v, const char *word)
     if (!v || !word)
         return -1;
 
-    if (v->size >= v->capacity)
-    {
-        /* For now, we don't implement dynamic resize; fail if full */
-        fprintf(stderr, "Vocabulary already full\n");
-        return -1;
-    }
-
     unsigned int hash = hash_word(word) % (unsigned int)v->capacity;
     VocabularyEntry *entry = v->table[hash];
 
@@ -111,6 +104,13 @@ int vocabulary_add_word(Vocabulary *v, const char *word)
             return entry->id;
         }
         entry = entry->next;
+    }
+
+    if (v->size >= v->capacity)
+    {
+        /* For now, we don't implement dynamic resize; fail if full */
+        fprintf(stderr, "Vocabulary already full\n");
+        return -1;
     }
 
     /* Create new entry */
