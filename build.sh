@@ -7,7 +7,7 @@ OUTPUT="dist/rnn"
 SOURCES="src/main.c src/matrix/matrix.c src/vocabulary/vocabulary.c src/model/rnn.c"
 
 # Define any compiler flags if needed (e.g., for debugging)
-CFLAGS="-Wall -g"
+CFLAGS="-Wall -O2"
 
 # Make sure the dist directory exists
 mkdir -p dist
