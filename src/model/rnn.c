@@ -300,6 +300,13 @@ char *rnn_generate_text(Vocabulary *v, RNN *rnn, char *initial_input, int length
     matrix_free(rnn_forward(rnn, bos));
     matrix_free(bos);
 
+    // Fall back to <unk> for words the model has never seen
+    if (vocabulary_get_index(v, initial_input) == -1)
+    {
+        fprintf(stderr, "Warning: '%s' is not in the vocabulary, using <unk>\n", initial_input);
+        initial_input = "<unk>";
+    }
+
     // Create one-hot of initial input
     Matrix *input = create_one_hot_vector(v, initial_input);
     if (!input)
